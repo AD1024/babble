@@ -89,7 +89,11 @@ where
             let problem = maxsat_ext.create_problem(root, "lib_ext", true, LpAstSize);
             let (elapsed, cost, best): (u128, Option<f64>, RecExpr<AstNode<Op>>) =
                 problem.solve().unwrap();
-            println!("WPMAXSAT Extract Time: {} (solver time: {})", now.elapsed().as_millis(), elapsed);
+            println!(
+                "WPMAXSAT Extract Time: {} (solver time: {})",
+                now.elapsed().as_millis(),
+                elapsed
+            );
             lift_libs(best)
         } else if self.extractor == ExtractorType::ILPACYC
             || self.extractor == ExtractorType::ILPTOPO
