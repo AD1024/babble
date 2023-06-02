@@ -14,7 +14,7 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct CoOccurrences {
     /// Internal representation which is not symmetrically closed.
-    data: HashMap<Id, HashSet<Id>>,
+    pub data: HashMap<Id, HashSet<Id>>,
 }
 
 impl CoOccurrences {

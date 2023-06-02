@@ -823,7 +823,12 @@ where
             current_train_exprs = plumbing::exprs(rc.as_ref());
 
             let (aeg, roots) = self.to_egraph(current_test_exprs.clone());
-            rc = apply_libs(aeg, &roots, &round_res.rewrites);
+            rc = apply_libs(
+                aeg,
+                &roots,
+                &round_res.rewrites,
+                crate::extract::ExtractorType::DEFAULT,
+            );
             test_libs.extend(plumbing::libs(rc.as_ref()));
             current_test_exprs = plumbing::exprs(rc.as_ref());
 

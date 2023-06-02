@@ -12,7 +12,7 @@ use crate::{
     ast_node::{Arity, AstNode, Expr, Pretty, Printable},
     extract::{
         beam::{LibExtractor, PartialLibCost},
-        lift_libs,
+        ilp_extract, lift_libs, maxsat_extract, ExtractorType, LpAstSize,
     },
     teachable::Teachable,
 };
@@ -30,6 +30,8 @@ where
     dsrs: Vec<Rewrite<AstNode<Op>, PartialLibCost>>,
     /// Any extra data associated with this experiment
     extra_data: Extra,
+    /// Extractor
+    extractor: ExtractorType,
 }
 
 impl<Op, Extra> EqsatExperiment<Op, Extra>
@@ -46,13 +48,14 @@ where
         + Send
         + 'static,
 {
-    pub fn new<I>(dsrs: I, extra_data: Extra) -> Self
+    pub fn new<I>(dsrs: I, extra_data: Extra, extractor: ExtractorType) -> Self
     where
         I: IntoIterator<Item = Rewrite<AstNode<Op>, PartialLibCost>>,
     {
         Self {
             dsrs: dsrs.into_iter().collect(),
             extra_data,
+            extractor,
         }
     }
 
@@ -75,16 +78,51 @@ where
 
         debug!("Finished in {}ms", start_time.elapsed().as_millis());
 
-        let ex_time = Instant::now();
         debug!("Extracting... ");
         let root = fin.add(AstNode::new(Op::list(), roots.iter().copied()));
+        // fin.dot().to_pdf("egraph.pdf").unwrap();
+        let ex_time = Instant::now();
 
-        let mut extractor = LibExtractor::new(&fin);
-        let best = extractor.best(root);
-
-        let lifted = lift_libs(best);
+        let lifted = if self.extractor == ExtractorType::MAXSAT {
+            let now = Instant::now();
+            let mut maxsat_ext = maxsat_extract::MaxsatExtractor::new(&fin, "apply_lib.p".into());
+            let problem = maxsat_ext.create_problem(root, "lib_ext", true, LpAstSize);
+            let (elapsed, cost, best): (u128, Option<f64>, RecExpr<AstNode<Op>>) =
+                problem.solve().unwrap();
+            println!("WPMAXSAT Extract Time: {} (solver time: {})", now.elapsed().as_millis(), elapsed);
+            lift_libs(best)
+        } else if self.extractor == ExtractorType::ILPACYC
+            || self.extractor == ExtractorType::ILPTOPO
+        {
+            let env = rplex::Env::new().unwrap();
+            let now = Instant::now();
+            let mut ilp_problem = ilp_extract::create_problem(
+                &env,
+                root,
+                &fin,
+                true,
+                self.extractor == ExtractorType::ILPTOPO,
+                |_, _, _| 1.0,
+            );
+            let (elapsed, opt, best) = ilp_problem.solve();
+            println!(
+                "ILP-{} Extract Time: {} (solver time: {})",
+                if self.extractor == ExtractorType::ILPACYC {
+                    "ACYC"
+                } else {
+                    "TOPO"
+                },
+                now.elapsed().as_millis(),
+                elapsed
+            );
+            lift_libs(best)
+        } else {
+            let mut extractor = LibExtractor::new(&fin);
+            let best = extractor.best(root);
+            println!("Default Extract Time: {}", ex_time.elapsed().as_millis());
+            lift_libs(best)
+        };
         let final_cost = AstSize.cost_rec(&lifted);
-
         debug!("Finished in {}ms", ex_time.elapsed().as_millis());
         debug!("final cost: {}", final_cost);
         debug!("{}", Pretty(&Expr::from(lifted.clone())));

@@ -18,6 +18,7 @@ use babble::{
     experiments::{
         cache::ExperimentCache, BeamExperiment, EqsatExperiment, Experiment, Rounds, Summary,
     },
+    extract::ExtractorType,
     rewrites,
 };
 use clap::Parser;
@@ -63,6 +64,9 @@ struct Opts {
     use_all: usize,
     #[clap(long, value_parser = ["babble", "au", "eqsat"])]
     mode: String,
+
+    #[clap(long)]
+    extract_mode: Option<String>,
 }
 
 const BENCHMARK_PATH: &str = "harness/data/dreamcoder-benchmarks/benches";
@@ -163,11 +167,27 @@ fn main() -> anyhow::Result<()> {
         println!("  {}: {} benchmark(s)", domain, benchmarks.len());
     }
 
+    let extractor_mode = match &opts.extract_mode {
+        None => ExtractorType::DEFAULT,
+        Some(s) => match s.as_str() {
+            "ilpacyc" => ExtractorType::ILPACYC,
+            "ilptopo" => ExtractorType::ILPTOPO,
+            "maxsat" => ExtractorType::MAXSAT,
+            _ => ExtractorType::DEFAULT,
+        },
+    };
+
     if let Some(domain) = &opts.domain {
-        run_domain(domain, &opts, &domains[domain.as_str()], &cache)
+        run_domain(
+            domain,
+            &opts,
+            &domains[domain.as_str()],
+            &cache,
+            extractor_mode,
+        )
     } else {
         for (domain, benchmarks) in domains {
-            run_domain(domain, &opts, &benchmarks, &cache)
+            run_domain(domain, &opts, &benchmarks, &cache, extractor_mode)
         }
     }
 
@@ -179,6 +199,7 @@ fn run_domain(
     opts: &Opts,
     benchmarks: &[Benchmark<'_>],
     _cache: &Mutex<ExperimentCache<DreamCoderOp>>,
+    extractor: ExtractorType,
 ) {
     let results = Mutex::new(Vec::new());
 
@@ -231,7 +252,8 @@ fn run_domain(
                 .collect();
 
             let summary = if opts.mode == "eqsat" {
-                let experiment = Rounds::new(1, EqsatExperiment::new(rewrites.clone(), ()));
+                let experiment =
+                    Rounds::new(1, EqsatExperiment::new(rewrites.clone(), (), extractor));
                 experiment.run_multi_summary(program_groups)
             } else {
                 let use_dsrs = match opts.mode.as_str() {

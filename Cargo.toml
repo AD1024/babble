@@ -35,7 +35,11 @@ log = "0.4"
 ref-cast = "1"
 ron = "0.7"
 anyhow = "1"
+rand = "0.8.5"
 time = { version = "0.3", features = ["formatting"] }
+
+[dependencies.rplex]
+git = "https://github.com/gussmith23/rplex"
 
 [profile.release]
 debug = true

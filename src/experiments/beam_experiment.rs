@@ -172,7 +172,12 @@ where
 
         let ex_time = Instant::now();
         info!("Extracting... ");
-        let lifted = apply_libs(aeg.clone(), &roots, &chosen_rewrites);
+        let lifted = apply_libs(
+            aeg.clone(),
+            &roots,
+            &chosen_rewrites,
+            crate::extract::ExtractorType::DEFAULT,
+        );
         let final_cost = AstSize.cost_rec(&lifted);
 
         info!("Finished in {}ms", ex_time.elapsed().as_millis());

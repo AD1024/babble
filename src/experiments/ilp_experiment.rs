@@ -7,6 +7,7 @@ use crate::{
 use egg::Rewrite;
 use serde::ser::Serialize;
 use std::{
+    collections::HashMap,
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
     time::Duration,
@@ -76,6 +77,7 @@ where
     fn run(&self, exprs: Vec<Expr<Op>>, writer: &mut CsvWriter) -> ExperimentResult<Op> {
         use crate::{
             ast_node::Pretty,
+            co_occurrence::CoOccurrences,
             extract::{ilp::LpExtractor, lift_libs},
             learn::LearnedLibrary,
         };
@@ -120,7 +122,14 @@ where
 
         let ll_time = Instant::now();
 
-        let learned_lib = LearnedLibrary::new(&aeg, self.learn_constants);
+        let learned_lib = LearnedLibrary::new(
+            &aeg,
+            self.learn_constants,
+            None,
+            CoOccurrences {
+                data: HashMap::new(),
+            },
+        );
         let lib_rewrites: Vec<_> = learned_lib.rewrites().collect();
 
         println!(

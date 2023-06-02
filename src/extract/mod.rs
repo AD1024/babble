@@ -5,9 +5,14 @@ pub mod beam;
 #[cfg(feature = "grb")]
 pub mod ilp;
 
+pub mod ilp_extract;
+pub mod maxsat_extract;
+
 use std::collections::HashMap;
 
 use egg::{Analysis, EGraph, Id, Language, RecExpr, Rewrite, Runner};
+use rplex;
+use time::Instant;
 
 use crate::{
     ast_node::{Arity, AstNode, Expr},
@@ -15,12 +20,45 @@ use crate::{
     teachable::{BindingExpr, Teachable},
 };
 
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum ExtractorType {
+    ILPACYC,
+    ILPTOPO,
+    MAXSAT,
+    DEFAULT,
+}
+
+pub struct LpAstSize;
+impl<Op, A> maxsat_extract::MaxsatCostFunction<AstNode<Op>, A> for LpAstSize
+where
+    Op: Clone
+        + Teachable
+        + Ord
+        + std::fmt::Debug
+        + std::fmt::Display
+        + std::hash::Hash
+        + Arity
+        + Send
+        + Sync,
+    A: Analysis<AstNode<Op>> + Default + Clone,
+{
+    fn node_cost(
+        &mut self,
+        egraph: &EGraph<AstNode<Op>, A>,
+        eclass: Id,
+        enode: &AstNode<Op>,
+    ) -> f64 {
+        1.0
+    }
+}
+
 /// Given an `egraph` that contains the original expression at `roots`,
 /// and a set of library `rewrites`, extract the programs rewritten using the library.
 pub fn apply_libs<Op, A>(
     egraph: EGraph<AstNode<Op>, A>,
     roots: &[Id],
     rewrites: &[Rewrite<AstNode<Op>, A>],
+    extractor_type: ExtractorType,
 ) -> RecExpr<AstNode<Op>>
 where
     Op: Clone
@@ -40,9 +78,41 @@ where
         .egraph;
     let root = fin.add(AstNode::new(Op::list(), roots.iter().copied()));
 
-    let mut extractor = beam::LibExtractor::new(&fin);
-    let best = extractor.best(root);
-    lift_libs(best)
+    if extractor_type == ExtractorType::MAXSAT {
+        let mut maxsat_ext = maxsat_extract::MaxsatExtractor::new(&fin, "apply_lib.p".into());
+        let problem = maxsat_ext.create_problem(root, "lib_ext", true, LpAstSize);
+        let (elapsed, cost, best): (u128, Option<f64>, RecExpr<AstNode<Op>>) =
+            problem.solve().unwrap();
+        println!("WPMAXSAT Extract Time: {}", elapsed);
+        lift_libs(best)
+    } else if extractor_type == ExtractorType::ILPACYC || extractor_type == ExtractorType::ILPTOPO {
+        let env = rplex::Env::new().unwrap();
+        let mut ilp_problem = ilp_extract::create_problem(
+            &env,
+            root,
+            &fin,
+            true,
+            extractor_type == ExtractorType::ILPTOPO,
+            |_, _, _| 1.0,
+        );
+        let (elapsed, opt, best) = ilp_problem.solve();
+        println!(
+            "ILP-{} Extract Time: {}",
+            if extractor_type == ExtractorType::ILPACYC {
+                "ACYC"
+            } else {
+                "TOPO"
+            },
+            elapsed
+        );
+        lift_libs(best)
+    } else {
+        let start = Instant::now();
+        let mut extractor = beam::LibExtractor::new(&fin);
+        let best = extractor.best(root);
+        let end = Instant::now();
+        lift_libs(best)
+    }
 }
 
 /// Lifts libs
